@@ -1,0 +1,6 @@
+make -C buildroot BR2_EXTERNAL=.. cheshire_defconfig
+make[1]: Entering directory '/scratch2/nsalamini/github_new/pulp-linux/buildroot'
+#
+# configuration written to /scratch2/nsalamini/github_new/pulp-linux/buildroot/.config
+#
+make[1]: Leaving directory '/scratch2/nsalamini/github_new/pulp-linux/buildroot'

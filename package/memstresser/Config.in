@@ -1,0 +1,4 @@
+config BR2_PACKAGE_MEMSTRESSER
+       bool "memstresser"
+       help
+	Simple program for testing access to memory.

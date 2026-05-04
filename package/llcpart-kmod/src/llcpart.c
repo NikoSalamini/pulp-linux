@@ -97,7 +97,6 @@ static void llc_print_tagger(struct device *dev)
 		return;
 	}
 
-
 	addr_conf = readl(llc->tagger_regs + TAGGER_REG_ADDR_CONF_REG_OFFSET);
 	dev_info(dev, "tagger: addr_conf = 0x%08x\n", addr_conf);
 
@@ -116,7 +115,10 @@ static void llc_print_tagger(struct device *dev)
 			 i, addr_reg, addr_reg << 2);
 	}
 
-	for (int i = 0; i < TAGGER_REG_PATID_MULTIREG_COUNT; i++) {
+	/* checking max entry index, 4 byte registers, 4 bit entries -> 
+    TAGGER_REG_PATID_MULTIREG_COUNT * 32/4 (bit) */
+	unsigned int total_entries = TAGGER_REG_PATID_MULTIREG_COUNT * 8;
+	for (int i = 0; i < total_entries; i++) {
 		u32 reg = readl(llc->tagger_regs +
 				(TAGGER_REG_PATID_0_REG_OFFSET + i * 4));
 
@@ -322,6 +324,8 @@ static int tagger_check_addr_mode(unsigned int mode, u64 addr)
 	return 0;
 }
 
+/* ---------------- tagger_addr ---------------- */
+
 static ssize_t tagger_addr_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -369,6 +373,7 @@ static ssize_t tagger_addr_store(struct device *dev,
 	if (ret != 3)
 		return -EINVAL;
 
+	/* Check if idx is not outside the allowed range */
 	if (idx >= TAGGER_REG_PAT_ADDR_MULTIREG_COUNT)
 		return -EINVAL;
 
@@ -394,12 +399,108 @@ static ssize_t tagger_addr_store(struct device *dev,
 			    ((mode & 0x3u) << shift);
 		writel(addr_conf,
 		       llc->tagger_regs + TAGGER_REG_ADDR_CONF_REG_OFFSET);
+
+		writel(BIT(TAGGER_REG_PAT_COMMIT_COMMIT_0_BIT),
+	       llc->tagger_regs + TAGGER_REG_PAT_COMMIT_REG_OFFSET);
 	}
 
 	return count;
 }
 
 static DEVICE_ATTR_RW(tagger_addr);
+
+/* ---------------- tagger_patid ---------------- */
+
+static ssize_t tagger_patid_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct llc *llc = dev_get_drvdata(dev);
+	int i, j;
+	ssize_t len = 0;
+
+	if (!llc->tagger_regs)
+		return sysfs_emit(buf, "no_tagger\n");
+
+	/* iterate per register */
+	for (i = 0; i < TAGGER_REG_PATID_MULTIREG_COUNT; i++) {
+
+		u32 reg_value = readl(llc->tagger_regs +
+			(TAGGER_REG_PATID_0_REG_OFFSET + i * 4));
+
+		/* each register has 8 entries of 4 bits*/
+		for (j = 0; j < 8; j++) {
+			unsigned int idx = i * 8 + j;
+			u32 patid = (reg_value >> (j * 4)) & 0xF;
+
+			len += scnprintf(buf + len, PAGE_SIZE - len,
+					 "[%2u]: 0x%x\n", idx, patid);
+
+			if (len >= PAGE_SIZE)
+				return len;
+		}
+	}
+
+	/* return len */
+	return len;
+}
+
+static ssize_t tagger_patid_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct llc *llc = dev_get_drvdata(dev);
+	u32 patid;
+	unsigned int idx;
+	int ret;
+
+	if (!llc->tagger_regs)
+		return -ENODEV;
+
+	/* Expected format: "<idx> <patid>" */
+	ret = sscanf(buf, "%u %x", &idx, &patid);
+	if (ret != 2)
+		return -EINVAL;
+
+	/* Checking the max entry index, 4 byte registers, 4 bit entries -> 
+    TAGGER_REG_PATID_MULTIREG_COUNT * 32/4 (bit) */
+	unsigned int total_entries = TAGGER_REG_PATID_MULTIREG_COUNT * 8;
+	if (idx >= total_entries)
+		return -EINVAL;
+
+	/* 8 entries (4-bit) per 32-bit register */
+	unsigned int reg_idx = idx / 8;
+	unsigned int relative_idx = idx % 8;
+
+	/* read the current register value */
+	u32 reg_value = 
+		readl(llc->tagger_regs + TAGGER_REG_PATID_0_REG_OFFSET + reg_idx * 4);
+
+	/* Build mask for 4-bit field and set the value accordingly */
+    u32 shift = relative_idx * 4;
+    u32 mask  = ~(0xFu << shift);
+	u32 value_to_write = ((u32) (patid & 0xF)) << shift;
+
+	/* Clear + insert */
+    reg_value = (reg_value & mask) | value_to_write;
+
+	/* Write */
+	writel(reg_value,
+       llc->tagger_regs +
+       (TAGGER_REG_PATID_0_REG_OFFSET + reg_idx * 4));
+	
+	/* Commit value */
+	writel(BIT(TAGGER_REG_PAT_COMMIT_COMMIT_0_BIT),
+	       llc->tagger_regs + TAGGER_REG_PAT_COMMIT_REG_OFFSET);
+
+	/* Print info */
+	u32 addr = TAGGER_REG_PATID_0_REG_OFFSET + reg_idx * 4;
+	pr_info("TAGGER_PATID[%u]: offset=0x%08x, value=0x%08x\n",
+        reg_idx, addr, reg_value);
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(tagger_patid);
 
 /* ---------------- Xilinx regs sysfs ---------------- */
 
@@ -474,6 +575,7 @@ static struct attribute *llc_attrs[] = {
 
 	/* tagger programming */
 	&dev_attr_tagger_addr.attr,
+	&dev_attr_tagger_patid.attr,
 
 	/* xilinx board regs */
 	&dev_attr_xilinx_fan_ctl.attr,
