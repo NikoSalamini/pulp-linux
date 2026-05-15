@@ -1,0 +1,5 @@
+config BR2_PACKAGE_AXI_RT_KMOD
+    bool "AXI RT config module"
+    depends on BR2_LINUX_KERNEL
+    help
+      AXI RT kernel driver.

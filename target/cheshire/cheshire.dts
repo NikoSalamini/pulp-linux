@@ -61,6 +61,15 @@
       reg = <0x0 0x3001000 0x0 0x1000>;
       tagger = <&tagger0>;
     };
+    axi_rt@20c0000 {
+        compatible = "eth,axi-rt";
+        reg = <0x0 0x20c0000 0x0 0x40000>;
+        cheshire-regs = <&cheshire_regs>;
+    };
+    cheshire_regs: cheshire-regs@3000000 {
+        compatible = "eth,cheshire-regs";
+        reg = <0x0 0x3000000 0x0 0x1000>;
+    };
     ddr_link: memory-controller@3006000 {
       compatible = "eth,ddr-link";
       reg = <0x0 0x3006000 0x0 0x1000>;
